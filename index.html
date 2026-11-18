@@ -40,6 +40,10 @@
   a.alt { display:block; text-align:center; color:var(--alt); background:transparent; border:2px solid var(--alt);
           text-decoration:none; font-weight:800; font-size:16px; padding:13px; border-radius:14px; margin:0 0 8px; }
   .help { color:var(--dim); font-size:14px; margin:6px 0 0; }
+  .took { display:flex; gap:10px; align-items:flex-start; margin-top:14px; cursor:pointer; }
+  .took input { width:22px; height:22px; margin:2px 0 0; accent-color:var(--brand); flex:none; }
+  .took b { font-size:16px; }
+  .took small { display:block; color:var(--dim); font-size:13.5px; margin-top:2px; }
   footer { color:var(--dim); font-size:12.5px; margin-top:28px; border-top:1px solid var(--line); padding-top:12px; line-height:1.6; }
 </style>
 </head>
@@ -51,6 +55,8 @@
 
   <h2>알림 시각</h2>
   <div class="card" id="times"></div>
+
+  <label class="took"><input type="checkbox" id="took"><span><b>방금 약을 먹었어요</b><small id="took-note"></small></span></label>
 
   <div class="sum" id="sum"></div>
   <a class="btn off" id="add" href="#">캘린더에 알림 추가</a>
@@ -110,34 +116,78 @@
   }
   function render() { timeRows(); build(); }
 
+  // 알림 일정 계산
+  //  - 총 복용 횟수 = 일수 × 하루 횟수 (2일·3일·하루 한 번은 일수÷간격 올림)
+  //  - 등록하는 지금 이후 가장 가까운 복용 시간부터 차례로 채운다 (이미 지난 시간은 건너뜀)
+  //  - '방금 약을 먹었어요': 지금과 가장 가까운 오늘의 복용 시간(하루 한 번·2일·3일은 오늘)을 먹은 것으로 보고 1회 빼고 그 다음부터
+  const DAYNAME = '일월화수목금토';
+  const at = (d0, add, hhmm) => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + add, +hhmm.slice(0, 2), +hhmm.slice(3));
+  function plan(items, days, took) {
+    const nowT = new Date(), today = new Date(nowT.getFullYear(), nowT.getMonth(), nowT.getDate());
+    if (items.length === 1 && items[0].iv >= 1 && SINGLE.some(s => s.k === items[0].k)) {
+      const x = items[0], t = sel.get(x.k);
+      let total = Math.ceil(days / x.iv), first;
+      if (took) { total -= 1; first = at(today, x.iv, t); }                        // 오늘 먹음 → 다음 간격부터
+      else first = at(today, 0, t) > nowT ? at(today, 0, t) : at(today, 1, t);     // 오늘 시각이 지났으면 내일부터
+      return { per: [{ x, first, n: total, iv: x.iv }], last: total > 0 ? at(first, x.iv * (total - 1), '00:00') : null,
+               lastName: '', tookLabel: '오늘' };
+    }
+    // 매일 복용 시간들: 오늘부터 시간순으로 펼친 뒤 필요한 만큼만
+    const slots = items.slice().sort((a, b) => sel.get(a.k).localeCompare(sel.get(b.k)));
+    const occ = [];
+    for (let d = 0; d <= days + 1; d++) for (const x of slots) occ.push({ x, when: at(today, d, sel.get(x.k)) });
+    let total = days * slots.length, from, tookLabel = '';
+    const todays = occ.filter(o => o.when.toDateString() === today.toDateString());
+    const near = todays.reduce((a, o) => !a || Math.abs(o.when - nowT) < Math.abs(a.when - nowT) ? o : a, null);
+    tookLabel = near ? `오늘 ${near.x.name}` : '';
+    if (took && near) { total -= 1; from = occ.indexOf(near) + 1; }
+    else from = occ.findIndex(o => o.when > nowT);
+    const pick = occ.slice(from, from + Math.max(0, total));
+    const per = slots.map(x => {
+      const mine = pick.filter(o => o.x === x);
+      return { x, first: mine.length ? mine[0].when : null, n: mine.length, iv: 1 };
+    }).filter(p => p.n > 0);
+    const lastO = pick[pick.length - 1];
+    return { per, last: lastO ? lastO.when : null, lastName: lastO ? lastO.x.name : '', tookLabel };
+  }
+
   let blobUrl = null;
   function build() {
     const items = ALL.filter(x => sel.has(x.k));
-    const days = DAYS, start = todayISO;          // 시작은 QR을 찍은 날
+    const days = DAYS;
     const a1 = $('add'), a2 = $('add2');
     if (!items.length || !days) {
       $('times').innerHTML = '<div class="empty">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</div>';
-      $('sum').style.display = 'none';
+      $('sum').style.display = 'none'; document.querySelector('.took').style.display = 'none';
       a1.classList.add('off'); a2.style.display = 'none'; $('help').textContent = '';
       return;
     }
-    const s8 = start.replace(/-/g, '');
+    const P = plan(items, days, $('took').checked);
+    $('took-note').textContent = P.tookLabel ? `${P.tookLabel} 알림을 제외하고 등록합니다.` : '';
     const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+    const ymd = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const md = d => `${d.getMonth() + 1}/${d.getDate()}(${DAYNAME[d.getDay()]})`;
     const fmtT = t => { const h = +t.slice(0, 2); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${t.slice(3)}`; };
-    const ev = items.map((x, i) => {
-      const t = sel.get(x.k).replace(':', ''), n = Math.ceil(days / x.iv);
+    const ev = P.per.map(p => {
+      const t = sel.get(p.x.k).replace(':', ''), s8 = ymd(p.first);
       const end = `${t.slice(0, 2)}${pad(Math.min(59, +t.slice(2) + 10))}`;
-      const title = `약 복용 (${x.name})`;
-      return ['BEGIN:VEVENT', `UID:${s8}-${x.k}-${t}-${Math.random().toString(36).slice(2)}@ahyeonolive`, `DTSTAMP:${stamp}`,
+      const title = `약 복용 (${p.x.name})`;
+      return ['BEGIN:VEVENT', `UID:${s8}-${p.x.k}-${t}-${Math.random().toString(36).slice(2)}@ahyeonolive`, `DTSTAMP:${stamp}`,
         `SUMMARY:${title}`, `DTSTART:${s8}T${t}00`, `DTEND:${s8}T${end}00`,
-        `RRULE:FREQ=DAILY;INTERVAL=${x.iv};COUNT=${n}`,
+        `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`,
         'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n');
     });
+    if (!ev.length) {
+      $('sum').style.display = ''; $('sum').textContent = '남은 복용 알림이 없습니다.';
+      a1.classList.add('off'); a2.style.display = 'none'; $('help').textContent = '';
+      return;
+    }
     const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ahyeonolive//med-alarm//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
       ...ev, 'END:VCALENDAR'].join('\r\n');
-    const last = new Date(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8) + days - 1);
-    $('sum').innerHTML = items.map(x => `${x.name} ${fmtT(sel.get(x.k))} · ${x.iv > 1 ? x.iv + '일마다 ' : '매일 '}${Math.ceil(days / x.iv)}회`).join('<br>')
-      + `<br><span style="font-weight:400">${+start.slice(5, 7)}/${+start.slice(8)} ~ ${last.getMonth() + 1}/${last.getDate()}</span>`;
+    const s8 = ymd(P.per[0].first);
+    $('sum').style.display = '';
+    $('sum').innerHTML = P.per.map(p => `${p.x.name} ${fmtT(sel.get(p.x.k))} · ${md(p.first)}부터 ${p.iv > 1 ? p.iv + '일마다 ' : ''}${p.n}회`).join('<br>')
+      + (P.last ? `<br><span style="font-weight:400">마지막 알림: ${md(P.last)} ${P.lastName}</span>` : '');
     if (blobUrl) URL.revokeObjectURL(blobUrl);
     blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
     const dataUrl = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
@@ -151,6 +201,7 @@
       : '내려받은 파일을 열고 <b>캘린더</b>를 선택한 뒤 <b>저장</b>을 누르세요.';
     window.__ics = ics;   // 시험용
   }
+  $('took').onchange = build;
   render();
 })();
 </script>
