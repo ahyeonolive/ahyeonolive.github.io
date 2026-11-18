@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; base-uri 'none'">
+<meta name="robots" content="noindex"><title>안드로이드 캘린더 연결 시험</title>
+<style>body{font:16px/1.5 -apple-system,"Malgun Gothic",sans-serif;margin:0;padding:20px 16px;max-width:460px}
+a,button{display:block;width:100%;box-sizing:border-box;text-align:center;font:inherit;font-weight:700;padding:14px;margin:10px 0;border-radius:12px;border:2px solid #0CAB60;background:#fff;color:#0CAB60;text-decoration:none}
+small{color:#666;display:block;margin:-6px 0 14px}</style></head>
+<body><h2>안드로이드 캘린더 연결 시험</h2>
+<p>내일 오후 7:00부터 3일마다 10회, '약 복용 (시험)' 일정. 각 버튼을 눌러 어떻게 되는지 봐 주세요.</p>
+<a id="i1" href="#">A. 캘린더 앱 바로 열기 (기본)</a><small>캘린더 일정 추가 화면이 바로 뜨는지, 반복이 들어가는지</small>
+<a id="i2" href="#">B. 삼성 캘린더 지정해서 열기</a><small>A가 안 되면</small>
+<button id="sh">C. 공유로 캘린더에 보내기</button><small>공유 창에 '캘린더'가 보이는지</small>
+<p id="msg" style="color:#c0392b"></p>
+<script>
+(function(){
+  const d=new Date(); d.setDate(d.getDate()+1); d.setHours(19,0,0,0);
+  const b=d.getTime(), e=b+10*60000;
+  const rr=encodeURIComponent('FREQ=DAILY;INTERVAL=3;COUNT=10');
+  const base=`action=android.intent.action.INSERT;type=vnd.android.cursor.dir/event;S.title=${encodeURIComponent('약 복용 (시험)')};l.beginTime=${b};l.endTime=${e};S.rrule=${rr};B.hasAlarm=true`;
+  document.getElementById('i1').href=`intent:#Intent;${base};end`;
+  document.getElementById('i2').href=`intent:#Intent;${base};package=com.samsung.android.calendar;end`;
+  const p=n=>String(n).padStart(2,'0'), ymd=`${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}`;
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ahyeonolive//test//KO','BEGIN:VEVENT',`UID:t${Date.now()}@ahyeonolive`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').slice(0,15)}Z`,'SUMMARY:약 복용 (시험)',`DTSTART:${ymd}T190000`,`DTEND:${ymd}T191000`,
+    'RRULE:FREQ=DAILY;INTERVAL=3;COUNT=10','BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:약 복용','TRIGGER:PT0M','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
+  document.getElementById('sh').onclick=async()=>{
+    const f=new File([ics],'복약알림.ics',{type:'text/calendar'});
+    try{ if(!navigator.canShare||!navigator.canShare({files:[f]})) throw new Error('이 브라우저는 파일 공유를 지원하지 않습니다');
+      await navigator.share({files:[f],title:'복약 알림'}); }catch(err){document.getElementById('msg').textContent='C 실패: '+err.message;}
+  };
+})();
+</script></body></html>
