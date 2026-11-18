@@ -34,9 +34,9 @@
   a.btn { display:block; text-align:center; background:var(--brand); color:#fff; text-decoration:none; font-weight:800;
           font-size:18px; padding:16px; border-radius:14px; margin:14px 0 8px; }
   a.btn.off { opacity:.35; pointer-events:none; }
-  /* 예비 버튼: 기본 버튼과 구분되는 파란 테두리 상자 (크기는 기본 버튼보다 약간 작게) */
-  :root { --alt:#2f6fde; }
-  @media (prefers-color-scheme: dark) { :root { --alt:#7fa8ff; } }
+  /* 예비 버튼: 기본 버튼(초록)과 구분되는 자주~갈색 테두리 상자 (크기는 기본 버튼보다 약간 작게) */
+  :root { --alt:#8a4560; }
+  @media (prefers-color-scheme: dark) { :root { --alt:#d99ab3; } }
   a.alt { display:block; text-align:center; color:var(--alt); background:transparent; border:2px solid var(--alt);
           text-decoration:none; font-weight:800; font-size:16px; padding:13px; border-radius:14px; margin:0 0 8px; }
   .help { color:var(--dim); font-size:14px; margin:6px 0 0; }
@@ -46,8 +46,7 @@
 <body>
 <main>
   <h1>복약 알림 등록</h1>
-  <p class="sub"> <b>알림 시각을</b> 생활에 맞게 바꾼 뒤 버튼을 누르세요. 
-    알림이 캘린더 앱에 전달됩니다.</p>
+  <p class="sub"> <b>알림 시각을</b> 생활에 맞게 바꾼 뒤 버튼을 누르시면 알림이 캘린더 앱에 전달됩니다.</p>
 
   <h2>알림 시각</h2>
   <div class="card" id="times"></div>
