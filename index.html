@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 외부 스크립트·외부 전송 금지: 이 파일 안의 코드만 실행되고, 어디로도 데이터를 보내지 않는다 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>복약 알림 등록</title>
+<style>
+  :root { --bg:#f6f8f7; --fg:#15201b; --dim:#5d6b64; --brand:#0CAB60; --card:#fff; --line:#dfe6e2; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111614; --fg:#e8efeb; --dim:#9aa8a1; --card:#1b2420; --line:#2c3833; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
+  main { max-width:440px; margin:0 auto; padding:28px 16px 40px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--dim); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:0; }
+  .row b { font-weight:700; }
+  a.btn { display:block; text-align:center; background:var(--brand); color:#fff; text-decoration:none; font-weight:700;
+          font-size:18px; padding:16px; border-radius:12px; margin:10px 0; }
+  a.btn.alt { background:transparent; color:var(--brand); border:2px solid var(--brand); font-size:15px; padding:12px; }
+  .help { color:var(--dim); font-size:14px; }
+  .err { color:#c0392b; font-weight:700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>복약 알림 등록</h1>
+  <p class="sub">아래 버튼을 누르면 휴대폰 기본 캘린더에 복약 알림이 등록됩니다.</p>
+  <div class="card" id="summary"></div>
+  <a class="btn" id="add" href="#">캘린더에 알림 추가</a>
+  <a class="btn alt" id="add2" href="#">버튼이 안 되면 여기</a>
+  <p class="help" id="help"></p>
+</main>
+<script>
+// 주소 예: ?t=1900&i=3&n=10&s=20261119&l=저녁
+//   t 알림 시각(HHMM, 여러 개는 쉼표)  i 간격(일, 기본 1)  n 횟수  s 시작일(YYYYMMDD, 기본 오늘)  l 표시용 이름(선택)
+// 개인정보는 받지 않는다. 일정은 이 기기 안에서만 만들어 캘린더 앱으로 넘긴다 (서버로 아무것도 보내지 않음).
+(function () {
+  const q = new URLSearchParams(location.search);
+  const pad = n => String(n).padStart(2, '0');
+  const today = new Date();
+  const times = (q.get('t') || '').split(',').filter(t => /^\d{4}$/.test(t) && +t.slice(0, 2) < 24 && +t.slice(2) < 60);
+  const iv = Math.max(1, Math.min(30, parseInt(q.get('i') || '1', 10) || 1));
+  const n = Math.max(1, Math.min(366, parseInt(q.get('n') || '0', 10) || 0));
+  let s = q.get('s');
+  if (!/^\d{8}$/.test(s || '')) s = `${today.getFullYear()}${pad(today.getMonth() + 1)}${pad(today.getDate())}`;
+  // 표시 이름은 한글·영문·숫자·공백·가운뎃점만 (주소를 조작해 일정 파일에 다른 내용을 끼워 넣지 못하게)
+  const label = (q.get('l') || '').replace(/[^0-9A-Za-z가-힣 ·]/g, '').slice(0, 20);
+  const sum = document.getElementById('summary');
+  if (!times.length || !q.get('n')) {
+    sum.innerHTML = '<span class="err">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</span>';
+    document.getElementById('add').style.display = document.getElementById('add2').style.display = 'none';
+    return;
+  }
+  const every = iv === 1 ? '매일' : `${iv}일마다`;
+  const fmtT = t => { const h = +t.slice(0, 2), m = t.slice(2); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${m}`; };
+  const lastDay = new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6) + iv * (n - 1));
+  sum.innerHTML = [
+    ['복용', label || '복약'], ['알림 시각', times.map(fmtT).join(', ')], ['반복', `${every} · ${n}회`],
+    ['기간', `${+s.slice(4, 6)}/${+s.slice(6)} ~ ${lastDay.getMonth() + 1}/${lastDay.getDate()}`],
+  ].map(([k, v]) => `<div class="row"><span>${k}</span><b>${v.replace(/</g, '&lt;')}</b></div>`).join('');
+
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const title = `약 복용${label ? ' (' + label + ')' : ''}`;
+  const ev = times.map((t, k) => [
+    'BEGIN:VEVENT',
+    `UID:${s}-${t}-${iv}-${n}-${k}-${Math.random().toString(36).slice(2)}@med-alarm`,
+    `DTSTAMP:${stamp}`,
+    `SUMMARY:${title}`,
+    `DTSTART:${s}T${t}00`, `DTEND:${s}T${t.slice(0, 2)}${pad(Math.min(59, +t.slice(2) + 10))}00`,
+    `RRULE:FREQ=DAILY;INTERVAL=${iv};COUNT=${n}`,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM',
+    'END:VEVENT'].join('\r\n'));
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//med-alarm//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...ev, 'END:VCALENDAR'].join('\r\n');
+  const fname = `복약알림_${s}.ics`;
+  const blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const dataUrl = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
+  const a1 = document.getElementById('add'), a2 = document.getElementById('add2');
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // 1차: iOS는 data URL(사파리가 '캘린더에 추가'를 띄움), 그 외는 파일 다운로드(삼성 캘린더로 열기)
+  a1.href = ios ? dataUrl : blobUrl; if (!ios) a1.download = fname;
+  a2.href = ios ? blobUrl : dataUrl; if (ios) a2.download = fname;
+  document.getElementById('help').innerHTML = ios
+    ? '‘캘린더에 추가’ 화면에서 <b>모두 추가</b>를 누르세요.'
+    : '내려받은 파일을 열고 <b>캘린더</b>(삼성 캘린더)를 선택한 뒤 <b>저장/가져오기</b>를 누르세요.';
+  window.__ics = ics;   // 시험용
+})();
+</script>
+</body>
+</html>
