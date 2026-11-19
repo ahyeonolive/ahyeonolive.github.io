@@ -34,6 +34,8 @@
   a.btn { display:block; text-align:center; background:var(--brand); color:#fff; text-decoration:none; font-weight:800;
           font-size:18px; padding:16px; border-radius:14px; margin:14px 0 8px; }
   a.btn.off { opacity:.35; pointer-events:none; }
+  a.btn.done { background:var(--card); color:var(--brand); border:2px solid var(--brand); }
+  #gbtns a.btn { margin:10px 0; }
   /* 예비 버튼: 기본 버튼(초록)과 구분되는 자주~갈색 테두리 상자 (크기는 기본 버튼보다 약간 작게) */
   :root { --alt:#8a4560; }
   @media (prefers-color-scheme: dark) { :root { --alt:#d99ab3; } }
@@ -61,11 +63,12 @@
   <div class="sum" id="sum"></div>
   <a class="btn off" id="add" href="#">캘린더에 알림 추가</a>
   <a class="alt" id="add2" href="#">버튼이 안 되면 여기</a>
+  <div id="gbtns"></div>
   <p class="help" id="help"></p>
 
   <footer>
     이 페이지는 이름·연락처 등 개인정보를 수집하거나 저장하지 않으며, 어디로도 전송하지 않습니다.
-    알림 일정은 이 휴대폰 안에서만 만들어져 캘린더 앱으로 전달됩니다.<br>
+    알림 일정은 이 휴대폰 안에서 만들어져 캘린더로 전달됩니다 (안드로이드는 구글 캘린더).<br>
     
     아현올리브약국
   </footer>
@@ -200,10 +203,23 @@
       a1.href = dataUrl; a1.removeAttribute('download');
       a2.href = blobUrl; a2.download = fname; a2.style.display = '';
       $('help').innerHTML = '‘캘린더에 추가’ 화면이 뜨면 <b>모두 추가</b>를 누르세요.';
+      $('gbtns').innerHTML = '';
     } else {
-      // 안드로이드: 두 버튼 모두 다운로드라 예비 버튼은 숨김 (파일 중복 방지)
-      a1.href = blobUrl; a1.download = fname; a2.style.display = 'none';
-      $('help').innerHTML = '① 버튼을 누르면 파일이 내려받아집니다.<br>② 화면 아래에 뜨는 <b>열기</b>를 누르세요. (안 보이면 알림창의 다운로드 완료를 누르세요)<br>③ <b>캘린더</b>를 고른 뒤 <b>저장</b>을 누르세요.';
+      // 안드로이드: 다운로드 없이 구글 캘린더 일정 추가 화면으로 (반복 포함). 복용 시간마다 버튼 하나
+      // (삼성 카메라·크롬은 반복을 넘기지 않거나 캘린더 앱 호출을 막음 — 2026-11-19 시험)
+      a1.style.display = 'none'; a2.style.display = 'none';
+      const gfmt = d => `${ymd(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+      $('gbtns').innerHTML = P.per.map(p => {
+        const st = new Date(p.first), en = new Date(st.getTime() + 10 * 60000);
+        const url = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({
+          action: 'TEMPLATE', text: `약 복용 (${p.x.name})`, dates: `${gfmt(st)}/${gfmt(en)}`, ctz: 'Asia/Seoul',
+          recur: `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`, details: '아현올리브약국 복약 알림' }).toString();
+        return `<a class="btn" target="_blank" rel="noopener" href="${url}">${P.per.length > 1 ? p.x.name + ' 알림 ' : ''}구글 캘린더에 추가</a>`;
+      }).join('');
+      document.querySelectorAll('#gbtns a').forEach(a => a.onclick = () => { a.classList.add('done'); a.textContent = '✓ ' + a.textContent; });
+      $('help').innerHTML = P.per.length > 1
+        ? '버튼마다 구글 캘린더가 열리면 <b>저장</b>을 누르고, 이 화면으로 돌아와 다음 버튼을 누르세요.'
+        : '구글 캘린더가 열리면 <b>저장</b>을 누르세요.';
     }
     window.__ics = ics;   // 시험용
   }
