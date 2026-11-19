@@ -89,7 +89,8 @@
   const pad = n => String(n).padStart(2, '0');
   const now = new Date();
   const todayISO = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const q = new URLSearchParams(location.search);
+  // 값은 주소의 # 뒤(서버로 전송되지 않음)에서 먼저 읽고, 예전 라벨의 ? 방식도 계속 읽는다
+  const q = new URLSearchParams(location.hash.length > 1 ? location.hash.slice(1) : location.search);
 
   // 복용 시간은 약국이 QR에 정한 것만 (손님은 시각만 바꿀 수 있음)
   const sel = new Map();                       // k → 시각 'HH:MM'
@@ -191,14 +192,19 @@
     if (blobUrl) URL.revokeObjectURL(blobUrl);
     blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
     const dataUrl = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
-    const fname = `복약알림_${s8}.ics`;
+    // 파일 이름에 시각을 붙여 '같은 이름 파일이 있습니다' 창이 뜨지 않게
+    const nowT = new Date(), fname = `복약알림_${s8}_${pad(nowT.getHours())}${pad(nowT.getMinutes())}${pad(nowT.getSeconds())}.ics`;
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    a1.classList.remove('off'); a2.style.display = '';
-    a1.href = ios ? dataUrl : blobUrl; a1.toggleAttribute('download', !ios); if (!ios) a1.download = fname;
-    a2.href = ios ? blobUrl : dataUrl; a2.toggleAttribute('download', ios); if (ios) a2.download = fname;
-    $('help').innerHTML = ios
-      ? '‘캘린더에 추가’ 화면이 뜨면 <b>모두 추가</b>를 누르세요.'
-      : '내려받은 파일을 열고 <b>캘린더</b>를 선택한 뒤 <b>저장</b>을 누르세요.';
+    a1.classList.remove('off');
+    if (ios) {
+      a1.href = dataUrl; a1.removeAttribute('download');
+      a2.href = blobUrl; a2.download = fname; a2.style.display = '';
+      $('help').innerHTML = '‘캘린더에 추가’ 화면이 뜨면 <b>모두 추가</b>를 누르세요.';
+    } else {
+      // 안드로이드: 두 버튼 모두 다운로드라 예비 버튼은 숨김 (파일 중복 방지)
+      a1.href = blobUrl; a1.download = fname; a2.style.display = 'none';
+      $('help').innerHTML = '① 버튼을 누르면 파일이 내려받아집니다.<br>② 화면 아래에 뜨는 <b>열기</b>를 누르세요. (안 보이면 알림창의 다운로드 완료를 누르세요)<br>③ <b>캘린더</b>를 고른 뒤 <b>저장</b>을 누르세요.';
+    }
     window.__ics = ics;   // 시험용
   }
   $('took').onchange = build;
