@@ -6,11 +6,15 @@
 <!-- 외부 스크립트·외부 전송 금지: 이 파일 안의 코드만 실행되고, 어디로도 데이터를 보내지 않는다 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <meta name="referrer" content="no-referrer">
-<title>복약 알림 등록 · 아현올리브약국</title>
+<title>복약 알림 등록</title>
 <style>
-  :root { --bg:#f5f8f6; --fg:#14201a; --dim:#5f6d66; --brand:#0CAB60; --brand-ink:#fff; --card:#fff; --line:#dde5e0; --soft:#e7f6ee; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0f1512; --fg:#e7eee9; --dim:#9aa9a1; --card:#18211c; --line:#2a3630; --soft:#16301f; } }
+  :root { --bg:#f6f6f6; --fg:#191919; --dim:#6b6b6b; --brand:#FEE500; --brand-ink:#191919; --card:#fff; --line:#e3e3e3; --soft:#fff8c4; --ink:#3c1e1e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121212; --fg:#ececec; --dim:#a3a3a3; --card:#1e1e1e; --line:#333; --soft:#2e2a10; --ink:#f3e9a0; } }
   * { box-sizing: border-box; }
+  header { background:var(--brand); color:var(--brand-ink); }
+  header div { max-width:460px; margin:0 auto; padding:22px 16px 18px; }
+  header h1 { color:#191919; }
+  header .sub { color:#3c3c3c; margin:4px 0 0; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
   main { max-width:460px; margin:0 auto; padding:22px 16px 36px; }
   h1 { font-size:22px; margin:0 0 2px; }
@@ -21,6 +25,10 @@
   .chip { appearance:none; font:inherit; font-weight:700; font-size:16px; padding:12px 4px; border-radius:12px; cursor:pointer;
           background:var(--card); color:var(--fg); border:1.5px solid var(--line); -webkit-tap-highlight-color:transparent; }
   .chip.on { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+  #kakao { background:var(--brand); color:#191919; }
+  #kakao.done { background:var(--card); color:var(--fg); border:2px solid var(--brand); }
+  details.more { margin-top:18px; border-top:1px solid var(--line); padding-top:10px; }
+  details.more summary { color:var(--dim); font-size:14.5px; cursor:pointer; padding:6px 0; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 14px; }
   .trow { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
   .trow:last-child { border-bottom:0; }
@@ -31,29 +39,31 @@
   input[type=number] { width:84px; text-align:right; }
   .empty { color:var(--dim); padding:12px 0; }
   .sum { background:var(--soft); border-radius:12px; padding:12px 14px; margin-top:16px; font-weight:700; }
-  a.btn { display:block; text-align:center; background:var(--brand); color:#fff; text-decoration:none; font-weight:800;
+  a.btn { display:block; text-align:center; background:var(--ink); color:var(--card); text-decoration:none; font-weight:800;
           font-size:18px; padding:16px; border-radius:14px; margin:14px 0 8px; }
   a.btn.off { opacity:.35; pointer-events:none; }
-  a.btn.done { background:var(--card); color:var(--brand); border:2px solid var(--brand); }
+  a.btn.done { background:var(--card); color:var(--fg); border:2px solid var(--ink); }
   #gbtns a.btn { margin:10px 0; }
-  /* 예비 버튼: 기본 버튼(초록)과 구분되는 자주~갈색 테두리 상자 (크기는 기본 버튼보다 약간 작게) */
-  :root { --alt:#8a4560; }
-  @media (prefers-color-scheme: dark) { :root { --alt:#d99ab3; } }
+  /* 예비 버튼: 갈색 테두리 상자 (크기는 기본 버튼보다 약간 작게) */
+  :root { --alt:#6b4a2b; }
+  @media (prefers-color-scheme: dark) { :root { --alt:#d9b98c; } }
   a.alt { display:block; text-align:center; color:var(--alt); background:transparent; border:2px solid var(--alt);
           text-decoration:none; font-weight:800; font-size:16px; padding:13px; border-radius:14px; margin:0 0 8px; }
   .help { color:var(--dim); font-size:14px; margin:6px 0 0; }
   .took { display:flex; gap:10px; align-items:flex-start; margin-top:14px; cursor:pointer; }
-  .took input { width:22px; height:22px; margin:2px 0 0; accent-color:var(--brand); flex:none; }
+  .took input { width:22px; height:22px; margin:2px 0 0; accent-color:#191919; flex:none; }
   .took b { font-size:16px; }
   .took small { display:block; color:var(--dim); font-size:13.5px; margin-top:2px; }
   footer { color:var(--dim); font-size:12.5px; margin-top:28px; border-top:1px solid var(--line); padding-top:12px; line-height:1.6; }
 </style>
 </head>
 <body>
-<main>
+<header><div>
   <h1>복약 알림 등록</h1>
   <p class="sub"> <b>알림 시각을</b> 생활에 맞게 바꾼 뒤 버튼을 누르시면
-    알림이 캘린더 앱에 전달됩니다.</p>
+    알림이 카카오톡으로 전달됩니다.</p>
+</div></header>
+<main>
 
   <h2>알림 시각</h2>
   <div class="card" id="times"></div>
@@ -61,24 +71,32 @@
   <label class="took"><input type="checkbox" id="took"><span><b>방금 약을 먹었어요</b><small id="took-note"></small></span></label>
 
   <div class="sum" id="sum"></div>
-  <a class="btn off" id="add" href="#">캘린더에 알림 추가</a>
-  <a class="alt" id="add2" href="#">버튼이 안 되면 여기</a>
-  <div id="gbtns"></div>
-  <p class="help" id="help"></p>
+  <a class="btn off" id="kakao" href="#">카카오톡으로 알림 받기</a>
+  <p class="help" id="khelp">처음 한 번은 카카오 동의 화면이 나와요. <b>동의하고 계속하기</b>를 누르면 등록됩니다.</p>
+
+  <details class="more" id="more">
+    <summary>카카오톡 말고 휴대폰 캘린더에 등록하기</summary>
+    <a class="btn off" id="add" href="#">캘린더에 알림 추가</a>
+    <a class="alt" id="add2" href="#">버튼이 안 되면 여기</a>
+    <div id="gbtns"></div>
+    <p class="help" id="help"></p>
+  </details>
 
   <footer>
-    이 페이지는 이름·연락처 등 개인정보를 수집하거나 저장하지 않으며, 어디로도 전송하지 않습니다.
-    알림 일정은 이 휴대폰 안에서 만들어져 캘린더로 전달됩니다 (안드로이드는 구글 캘린더).<br>
-    
-    아현올리브약국
+    이 페이지는 이름·연락처 등 개인정보를 수집하거나 저장하지 않습니다.
+    알림은 카카오 로그인 동의를 거쳐 내 카카오톡 캘린더에 만들어지며,
+    로그인 정보는 등록 직후 폐기하고 보관하지 않습니다.
   </footer>
 </main>
 <script>
-// QR 주소 예: https://ahyeonolive.github.io/?p=m,e&d=30   (약국 검수 화면 scan.html에서 만든 QR)
+// QR 주소 예: https://med-alarm.github.io/#p=m,e&d=30   (약국 검수 화면 scan.html에서 만든 QR)
 //   p 복용 시간 (m 아침, l 점심, e 저녁, b 자기전, o 하루에 한 번, d2 2일에 1번, d3 3일에 1번)
 //   d 복용 일수
 // 복용 시간 종류와 일수는 약국이 정한 그대로. 손님은 각 알림 시각만 바꿀 수 있다. 개인정보는 받지 않는다.
 (function () {
+  // 카카오톡 등록 서버 (Cloudflare Worker). m: t = 할 일(완료 체크 가능), e = 일정, b = 둘 다
+  const KAKAO_WORKER = 'https://pill-alarm.alarming.workers.dev/start';
+  const KAKAO_MODE = 't';
   const DAILY = [
     { k: 'm', name: '아침', t: '08:00' }, { k: 'l', name: '점심', t: '12:30' },
     { k: 'e', name: '저녁', t: '19:30' }, { k: 'b', name: '자기전', t: '23:00' },
@@ -111,9 +129,12 @@
     const items = ALL.filter(x => sel.has(x.k));
     $('times').innerHTML = items.map(x =>
       `<div class="trow"><span><b>${x.name}</b>${x.iv > 1 ? `<small>${x.iv}일마다</small>` : '<small>매일</small>'}</span>`
-      + `<input type="time" data-k="${x.k}" value="${sel.get(x.k)}"></div>`).join('');
+      + `<input type="time" step="300" data-k="${x.k}" value="${sel.get(x.k)}"></div>`).join('');
     document.querySelectorAll('#times input').forEach(el => el.onchange = () => {
-      if (/^\d{2}:\d{2}$/.test(el.value)) sel.set(el.dataset.k, el.value);
+      if (/^\d{2}:\d{2}$/.test(el.value)) {          // 카카오 알림은 5분 단위 → 가까운 5분으로
+        let m = Math.round((+el.value.slice(0, 2) * 60 + +el.value.slice(3)) / 5) * 5 % 1440;
+        el.value = `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; sel.set(el.dataset.k, el.value);
+      }
       else el.value = sel.get(el.dataset.k);
       build();
     });
@@ -159,11 +180,12 @@
   function build() {
     const items = ALL.filter(x => sel.has(x.k));
     const days = DAYS;
-    const a1 = $('add'), a2 = $('add2');
+    const a1 = $('add'), a2 = $('add2'), ak = $('kakao');
     if (!items.length || !days) {
       $('times').innerHTML = '<div class="empty">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</div>';
       $('sum').style.display = 'none'; document.querySelector('.took').style.display = 'none';
       a1.classList.add('off'); a2.style.display = 'none'; $('help').textContent = '';
+      ak.classList.add('off'); $('khelp').style.display = 'none'; $('more').style.display = 'none';
       return;
     }
     const P = plan(items, days, $('took').checked);
@@ -176,7 +198,7 @@
       const t = sel.get(p.x.k).replace(':', ''), s8 = ymd(p.first);
       const end = `${t.slice(0, 2)}${pad(Math.min(59, +t.slice(2) + 10))}`;
       const title = `약 복용 (${p.x.name})`;
-      return ['BEGIN:VEVENT', `UID:${s8}-${p.x.k}-${t}-${Math.random().toString(36).slice(2)}@ahyeonolive`, `DTSTAMP:${stamp}`,
+      return ['BEGIN:VEVENT', `UID:${s8}-${p.x.k}-${t}-${Math.random().toString(36).slice(2)}@med-alarm`, `DTSTAMP:${stamp}`,
         `SUMMARY:${title}`, `DTSTART:${s8}T${t}00`, `DTEND:${s8}T${end}00`,
         `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`,
         'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n');
@@ -184,9 +206,14 @@
     if (!ev.length) {
       $('sum').style.display = ''; $('sum').textContent = '남은 복용 알림이 없습니다.';
       a1.classList.add('off'); a2.style.display = 'none'; $('help').textContent = '';
+      ak.classList.add('off');
       return;
     }
-    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ahyeonolive//med-alarm//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    // 카카오톡: 복용 시간마다 코드.첫알림(YYYYMMDDHHmm).D간격.횟수 → Worker가 카카오 동의 후 등록
+    const kp = P.per.map(p => `${p.x.k}.${ymd(p.first)}${pad(p.first.getHours())}${pad(p.first.getMinutes())}.D${p.iv}.${p.n}`).join('~');
+    ak.href = KAKAO_WORKER + '?' + new URLSearchParams({ p: kp, m: KAKAO_MODE }).toString();
+    ak.classList.remove('off');
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//med-alarm//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
       ...ev, 'END:VCALENDAR'].join('\r\n');
     const s8 = ymd(P.per[0].first);
     $('sum').style.display = '';
@@ -213,7 +240,7 @@
         const st = new Date(p.first), en = new Date(st.getTime() + 10 * 60000);
         const url = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({
           action: 'TEMPLATE', text: `약 복용 (${p.x.name})`, dates: `${gfmt(st)}/${gfmt(en)}`, ctz: 'Asia/Seoul',
-          recur: `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`, details: '아현올리브약국 복약 알림' }).toString();
+          recur: `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`, details: '복약 알림' }).toString();
         return `<a class="btn" target="_blank" rel="noopener" href="${url}">${P.per.length > 1 ? p.x.name + ' 알림 ' : ''}구글 캘린더에 추가</a>`;
       }).join('');
       document.querySelectorAll('#gbtns a').forEach(a => a.onclick = () => { a.classList.add('done'); a.textContent = '✓ ' + a.textContent; });
