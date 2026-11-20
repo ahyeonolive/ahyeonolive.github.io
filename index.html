@@ -40,6 +40,9 @@
   input[type=time], input[type=date], input[type=number] { font:inherit; font-size:17px; font-weight:700; padding:8px 10px; border-radius:10px;
           border:1.5px solid var(--line); background:var(--bg); color:var(--fg); }
   input[type=number] { width:84px; text-align:right; }
+  input[type=date] { font-size:15px; padding:8px 6px; }
+  .dt { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+  .trow input[type=time], .trow input[type=date] { max-width:170px; }
   .empty { color:var(--dim); padding:12px 0; }
   .sum { background:var(--soft); border-radius:12px; padding:12px 14px; margin-top:16px; font-weight:700; }
   a.btn { display:block; text-align:center; background:var(--ink); color:var(--card); text-decoration:none; font-weight:800;
@@ -90,152 +93,240 @@
 </main>
 <script>
 // QR 주소 예: https://med-alarm.github.io/#p=m,e&d=30   (약국 검수 화면 scan.html에서 만든 QR)
-//   p 복용 시간 (m 아침, l 점심, e 저녁, b 자기전, o 하루에 한 번, d2 2일에 1번, d3 3일에 1번)
-//   d 복용 일수
-// 복용 시간 종류와 일수는 약국이 정한 그대로. 손님은 각 알림 시각만 바꿀 수 있다. 개인정보는 받지 않는다.
+//   p  매일(조합 가능) m 아침 l 점심 e 저녁 b 자기전                    d = 일수
+//      단독 o 하루 한 번 d2 2일 d3 3일 w 일주일 h8 8시간 h12 12시간      d = 일수
+//           mo 한 달에 1번                                            d = 개월 수
+//           wd 요일 지정 + w=월화수목금토일 1/0                          d = 일수
+//           c  주기 복용 + c=복용일-휴약일 (21-7 등)                     d = 팩 수(1~3)
+//           x  1회 알림 + x=알림 수(1~2)  — 날짜·시각은 손님이 지정
+//   z=1  약 소진 알림 (마지막 복용 2일 전 오전 10시)
+// 복용 방법과 일수는 약국이 정한 그대로. 손님은 시각(과 주기 시작일·1회 알림 날짜)만 바꾼다. 개인정보는 받지 않는다.
 (function () {
   // 카카오톡 등록 서버 (Cloudflare Worker). m: t = 할 일(완료 체크 가능), e = 일정, b = 둘 다
   const KAKAO_WORKER = 'https://pill-alarm.alarming.workers.dev/start';
   const KAKAO_MODE = 't';
-  const DAILY = [
-    { k: 'm', name: '아침', t: '08:00' }, { k: 'l', name: '점심', t: '12:30' },
-    { k: 'e', name: '저녁', t: '19:30' }, { k: 'b', name: '자기전', t: '23:00' },
-  ];
-  const SINGLE = [
-    { k: 'o', name: '하루에 한 번', t: '12:00', iv: 1 },
-    { k: 'd2', name: '2일에 1번', t: '19:00', iv: 2 },
-    { k: 'd3', name: '3일에 1번', t: '19:00', iv: 3 },
-  ];
-  const ALL = [...DAILY.map(x => ({ ...x, iv: 1 })), ...SINGLE];
+  const NAME = { m: '아침', l: '점심', e: '저녁', b: '자기전', o: '하루에 한 번', d2: '2일에 1번', d3: '3일에 1번',
+    w: '일주일에 1번', mo: '한 달에 1번', h8: '8시간마다', h12: '12시간마다', wd: '요일 복용', c: '주기 복용', x: '알림',
+    np: '새 약 팩 시작', z: '약이 곧 떨어져요' };
+  const DEFT = { m: '08:00', l: '12:30', e: '19:30', b: '23:00', o: '12:00', d2: '19:00', d3: '19:00', w: '08:00',
+    mo: '08:00', h8: '07:00', h12: '09:00', wd: '08:00', c: '21:00', x1: '08:00', x2: '20:00' };
+  const IV = { o: 1, d2: 2, d3: 3, w: 7 };
+  const DAILY = ['m', 'l', 'e', 'b'], WEEK = '월화수목금토일', DAYNAME = '일월화수목금토';
   const pad = n => String(n).padStart(2, '0');
-  const now = new Date();
-  const todayISO = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  // 값은 주소의 # 뒤(서버로 전송되지 않음)에서 먼저 읽고, 예전 라벨의 ? 방식도 계속 읽는다
-  const q = new URLSearchParams(location.hash.length > 1 ? location.hash.slice(1) : location.search);
-
-  // 복용 시간은 약국이 QR에 정한 것만 (손님은 시각만 바꿀 수 있음)
-  const sel = new Map();                       // k → 시각 'HH:MM'
-  for (const k of (q.get('p') || '').split(',')) {
-    const x = ALL.find(a => a.k === k);
-    if (x && !sel.has(k)) sel.set(k, x.t);
-  }
-  if ([...sel.keys()].some(k => SINGLE.some(x => x.k === k)) && sel.size > 1)
-    sel.clear();                               // '하루에 한 번'·'2일'·'3일'은 단독 — 섞인 QR은 잘못된 것
-  const days0 = parseInt(q.get('d') || '', 10);
-  const DAYS = days0 > 0 && days0 <= 365 ? days0 : 0;
   const $ = id => document.getElementById(id);
+  const at = (d0, add, hhmm) => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + add, +hhmm.slice(0, 2), +hhmm.slice(3));
+  const addMonths = (d, k) => new Date(d.getFullYear(), d.getMonth() + k, d.getDate(), d.getHours(), d.getMinutes());
+  const ymd = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const md = d => `${d.getMonth() + 1}/${d.getDate()}(${DAYNAME[d.getDay()]})`;
+  const fmtT = t => { const h = +t.slice(0, 2); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${t.slice(3)}`; };
+  const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const wk = d => (d.getDay() + 6) % 7;                      // 월=0 … 일=6
+  const today0 = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
 
-  function timeRows() {
-    const items = ALL.filter(x => sel.has(x.k));
-    $('times').innerHTML = items.map(x =>
-      `<div class="trow"><span><b>${x.name}</b>${x.iv > 1 ? `<small>${x.iv}일마다</small>` : '<small>매일</small>'}</span>`
-      + `<input type="time" step="300" data-k="${x.k}" value="${sel.get(x.k)}"></div>`).join('');
-    document.querySelectorAll('#times input').forEach(el => el.onchange = () => {
-      if (/^\d{2}:\d{2}$/.test(el.value)) {          // 카카오 알림은 5분 단위 → 가까운 5분으로
-        let m = Math.round((+el.value.slice(0, 2) * 60 + +el.value.slice(3)) / 5) * 5 % 1440;
-        el.value = `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; sel.set(el.dataset.k, el.value);
-      }
-      else el.value = sel.get(el.dataset.k);
+  // ---- QR 값 읽기 (# 뒤: 서버로 전송되지 않음. 예전 라벨의 ? 방식도 읽음) ----
+  const q = new URLSearchParams(location.hash.length > 1 ? location.hash.slice(1) : location.search);
+  const P = [...new Set((q.get('p') || '').split(',').filter(Boolean))];
+  const D = parseInt(q.get('d') || '', 10);
+  let kind = '';
+  if (P.length && P.every(k => DAILY.includes(k))) kind = 'daily';
+  else if (P.length === 1 && NAME[P[0]] && !DAILY.includes(P[0]) && !['np', 'z'].includes(P[0])) kind = P[0];
+  const W = /^[01]{7}$/.test(q.get('w') || '') ? q.get('w') : '';
+  const C = (/^(\d{1,2})-(\d{1,2})$/.exec(q.get('c') || '') || []).slice(1).map(Number);
+  const XN = Math.min(2, Math.max(1, parseInt(q.get('x') || '1', 10) || 1));
+  const Z = q.get('z') === '1' && !['c', 'x'].includes(kind);
+  const ok = kind === 'x' ? true
+    : kind === 'c' ? (C.length === 2 && C[0] >= 1 && C[0] <= 60 && C[1] >= 1 && C[1] <= 30 && D >= 1 && D <= 3)
+    : kind === 'mo' ? (D >= 1 && D <= 24)
+    : kind === 'wd' ? (W.includes('1') && D >= 1 && D <= 365)
+    : kind ? (D >= 1 && D <= 365) : false;
+
+  // ---- 손님이 바꿀 수 있는 값: 시각(5분 단위), 주기 시작일, 1회 알림 날짜 ----
+  const T = {};                                            // key → 'HH:MM'
+  const DT = {};                                           // key → 'YYYY-MM-DD'
+  const tomorrow = isoDate(at(today0(), 1, '00:00'));
+  if (kind === 'daily') P.forEach(k => T[k] = DEFT[k]);
+  else if (kind === 'x') { T.x1 = DEFT.x1; DT.x1 = tomorrow; if (XN > 1) { T.x2 = DEFT.x2; DT.x2 = tomorrow; } }
+  else if (kind) T[kind] = DEFT[kind];
+  if (kind === 'c') DT.c = isoDate(today0());
+  const r5 = v => { let m = Math.round((+v.slice(0, 2) * 60 + +v.slice(3)) / 5) * 5 % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+  const plusH = (t, h) => { const m = (+t.slice(0, 2) * 60 + +t.slice(3) + h * 60) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+
+  function rows() {
+    const tIn = k => `<input type="time" step="300" data-t="${k}" value="${T[k]}">`;
+    const dIn = (k, min, max) => `<input type="date" data-d="${k}" value="${DT[k]}" min="${min}" max="${max}">`;
+    const row = (label, sub, input) => `<div class="trow"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><span>${input}</span></div>`;
+    let h = '';
+    if (kind === 'daily') h = P.slice().sort((a, b) => DAILY.indexOf(a) - DAILY.indexOf(b)).map(k => row(NAME[k], '매일', tIn(k))).join('');
+    else if (IV[kind]) h = row(NAME[kind], kind === 'w' ? '매주' : kind === 'o' ? '매일' : `${IV[kind]}일마다`, tIn(kind));
+    else if (kind === 'mo') h = row(NAME.mo, '매월', tIn('mo'));
+    else if (kind === 'h8' || kind === 'h12') {
+      const n = kind === 'h8' ? 3 : 2, step = kind === 'h8' ? 8 : 12;
+      h = row('1회차', '첫 시각', tIn(kind));
+      for (let i = 1; i < n; i++) h += row(`${i + 1}회차`, `${step * i}시간 뒤`, `<b>${fmtT(plusH(T[kind], step * i))}</b>`);
+    } else if (kind === 'wd') h = row('매주 ' + [...WEEK].filter((_, i) => W[i] === '1').join('·'), '', tIn('wd'));
+    else if (kind === 'c') {
+      h = row('복용 시작일', '', dIn('c', isoDate(today0()), isoDate(at(today0(), 60, '00:00'))))
+        + row('알림 시각', '매일', tIn('c'));
+    } else if (kind === 'x') {
+      for (let i = 1; i <= XN; i++) h += row(XN > 1 ? `알림 ${i}` : '알림', '', `<span class="dt">${dIn('x' + i, isoDate(today0()), isoDate(at(today0(), 180, '00:00')))}${tIn('x' + i)}</span>`);
+    }
+    $('times').innerHTML = h;
+    document.querySelectorAll('#times input[data-t]').forEach(el => el.onchange = () => {
+      if (/^\d{2}:\d{2}$/.test(el.value)) { el.value = r5(el.value); T[el.dataset.t] = el.value; } else el.value = T[el.dataset.t];
+      rows(); build();
+    });
+    document.querySelectorAll('#times input[data-d]').forEach(el => el.onchange = () => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(el.value)) DT[el.dataset.d] = el.value; else el.value = DT[el.dataset.d];
       build();
     });
   }
-  function render() { timeRows(); build(); }
 
-  // 알림 일정 계산
-  //  - 총 복용 횟수 = 일수 × 하루 횟수 (2일·3일·하루 한 번은 일수÷간격 올림)
-  //  - 등록하는 지금 이후 가장 가까운 복용 시간부터 차례로 채운다 (이미 지난 시간은 건너뜀)
-  //  - '방금 약을 먹었어요': 지금과 가장 가까운 오늘의 복용 시간(하루 한 번·2일·3일은 오늘)을 먹은 것으로 보고 1회 빼고 그 다음부터
-  const DAYNAME = '일월화수목금토';
-  const at = (d0, add, hhmm) => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + add, +hhmm.slice(0, 2), +hhmm.slice(3));
-  function plan(items, days, took) {
-    const nowT = new Date(), today = new Date(nowT.getFullYear(), nowT.getMonth(), nowT.getDate());
-    if (items.length === 1 && items[0].iv >= 1 && SINGLE.some(s => s.k === items[0].k)) {
-      const x = items[0], t = sel.get(x.k);
-      let total = Math.ceil(days / x.iv), first;
-      if (took) { total -= 1; first = at(today, x.iv, t); }                        // 오늘 먹음 → 다음 간격부터
-      else first = at(today, 0, t) > nowT ? at(today, 0, t) : at(today, 1, t);     // 오늘 시각이 지났으면 내일부터
-      return { per: [{ x, first, n: total, iv: x.iv }], last: total > 0 ? at(first, x.iv * (total - 1), '00:00') : null,
-               lastName: '', tookLabel: '오늘' };
+  // ---- 알림 계획: 항목 = {code, name, first, rule(D1~D7 | W1010100 | M1 | X), n, t} ----
+  //  - 등록하는 지금 이후 가장 가까운 복용 시간부터 (지난 시간은 건너뜀)
+  //  - '방금 약을 먹었어요': 지금과 가장 가까운 오늘 복용분(하루 1회 이하 방식은 '오늘')을 먹은 것으로 보고 1회 빼고 그 다음부터
+  function plan(took) {
+    const now = new Date(), today = today0(), items = [];
+    let tookLabel = '', err = '';
+    if (kind === 'daily' || kind === 'h8' || kind === 'h12') {
+      const slots = kind === 'daily'
+        ? P.map(k => ({ code: k, name: NAME[k], t: T[k] }))
+        : Array.from({ length: kind === 'h8' ? 3 : 2 }, (_, i) => ({ code: kind, name: `${NAME[kind]} ${i + 1}회차`, t: plusH(T[kind], (kind === 'h8' ? 8 : 12) * i) }));
+      slots.sort((a, b) => a.t.localeCompare(b.t));
+      const occ = [];
+      for (let d = 0; d <= D + 1; d++) for (const s of slots) occ.push({ s, when: at(today, d, s.t) });
+      let total = D * slots.length, from;
+      const todays = occ.filter(o => o.when.toDateString() === today.toDateString());
+      const near = todays.reduce((a, o) => !a || Math.abs(o.when - now) < Math.abs(a.when - now) ? o : a, null);
+      tookLabel = near ? `오늘 ${near.s.name}` : '';
+      if (took && near) { total -= 1; from = occ.indexOf(near) + 1; } else from = occ.findIndex(o => o.when > now);
+      const pick = occ.slice(from, from + Math.max(0, total));
+      for (const s of slots) {
+        const mine = pick.filter(o => o.s === s);
+        if (mine.length) items.push({ code: s.code, name: s.name, first: mine[0].when, rule: 'D1', n: mine.length, t: s.t });
+      }
+    } else if (IV[kind]) {
+      const iv = IV[kind], t = T[kind];
+      let total = Math.ceil(D / iv), first;
+      tookLabel = '오늘';
+      if (took) { total -= 1; first = at(today, iv, t); } else first = at(today, 0, t) > now ? at(today, 0, t) : at(today, 1, t);
+      if (total > 0) items.push({ code: kind, name: NAME[kind], first, rule: 'D' + iv, n: total, t });
+    } else if (kind === 'mo') {
+      const t = T.mo; let total = D, first;
+      tookLabel = '오늘';
+      if (took) { total -= 1; first = addMonths(at(today, 0, t), 1); } else first = at(today, 0, t) > now ? at(today, 0, t) : at(today, 1, t);
+      if (total > 0) items.push({ code: 'mo', name: NAME.mo, first, rule: 'M1', n: total, t });
+    } else if (kind === 'wd') {
+      const t = T.wd, occ = [];
+      for (let d = 0; d < D; d++) { const w = at(today, d, t); if (W[wk(w)] === '1') occ.push(w); }
+      let list = occ;
+      if (occ.length && occ[0].toDateString() === today.toDateString()) {
+        tookLabel = '오늘';
+        if (took) list = occ.slice(1);
+      }
+      list = list.filter(w => w > now);
+      if (list.length) items.push({ code: 'wd', name: '매주 ' + [...WEEK].filter((_, i) => W[i] === '1').join('·'), first: list[0], rule: 'W' + W, n: list.length, t });
+    } else if (kind === 'c') {
+      const [a, b] = C, t = T.c, s0 = new Date(DT.c + 'T00:00');
+      for (let i = 0; i < D; i++) {
+        let first = at(s0, i * (a + b), t), n = a;
+        if (i === 0 && first.toDateString() === today.toDateString()) {
+          tookLabel = '오늘';
+          if (took || first <= now) { first = at(s0, 1, t); n = a - 1; }       // 오늘분은 먹었거나 시각이 지남 → 내일부터
+        }
+        if (n > 0) items.push({ code: 'c', name: `${NAME.c}${D > 1 ? ` (${i + 1}팩)` : ''}`, first, rule: 'D1', n, t });
+        items.push({ code: 'np', name: NAME.np, first: at(s0, (i + 1) * (a + b), t), rule: 'X', n: 1, t });
+      }
+    } else if (kind === 'x') {
+      for (let i = 1; i <= XN; i++) {
+        const w = new Date(`${DT['x' + i]}T${T['x' + i]}`);
+        if (!(w > now)) err = '알림 날짜·시각이 지났습니다. 앞으로의 날짜로 바꿔 주세요.';
+        items.push({ code: 'x', name: XN > 1 ? `알림 ${i}` : '알림', first: w, rule: 'X', n: 1, t: T['x' + i] });
+      }
     }
-    // 매일 복용 시간들: 오늘부터 시간순으로 펼친 뒤 필요한 만큼만
-    const slots = items.slice().sort((a, b) => sel.get(a.k).localeCompare(sel.get(b.k)));
-    const occ = [];
-    for (let d = 0; d <= days + 1; d++) for (const x of slots) occ.push({ x, when: at(today, d, sel.get(x.k)) });
-    let total = days * slots.length, from, tookLabel = '';
-    const todays = occ.filter(o => o.when.toDateString() === today.toDateString());
-    const near = todays.reduce((a, o) => !a || Math.abs(o.when - nowT) < Math.abs(a.when - nowT) ? o : a, null);
-    tookLabel = near ? `오늘 ${near.x.name}` : '';
-    if (took && near) { total -= 1; from = occ.indexOf(near) + 1; }
-    else from = occ.findIndex(o => o.when > nowT);
-    const pick = occ.slice(from, from + Math.max(0, total));
-    const per = slots.map(x => {
-      const mine = pick.filter(o => o.x === x);
-      return { x, first: mine.length ? mine[0].when : null, n: mine.length, iv: 1 };
-    }).filter(p => p.n > 0);
-    const lastO = pick[pick.length - 1];
-    return { per, last: lastO ? lastO.when : null, lastName: lastO ? lastO.x.name : '', tookLabel };
+    // 마지막 회차와 소진 알림
+    const lastOf = it => it.rule === 'X' || it.n === 1 ? it.first
+      : it.rule === 'M1' ? addMonths(it.first, it.n - 1)
+      : it.rule[0] === 'D' ? at(it.first, (it.n - 1) * +it.rule[1], it.t)
+      : (() => { let c = 0, d = new Date(it.first); for (;;) { if (W[wk(d)] === '1' && ++c === it.n) return d; d = at(d, 1, it.t); } })();
+    let last = null, lastName = '';
+    for (const it of items) if (it.code !== 'np') { const l = lastOf(it); if (!last || l > last) { last = l; lastName = it.name; } }
+    if (Z && last) {
+      const zw = at(last, -2, '10:00');
+      if (zw > now) items.push({ code: 'z', name: NAME.z, first: zw, rule: 'X', n: 1, t: '10:00' });
+    }
+    return { items, last, lastName, tookLabel, err };
   }
 
+  function rruleOf(it) {
+    if (it.rule === 'X' || it.n < 2) return '';
+    if (it.rule[0] === 'D') return `FREQ=DAILY;INTERVAL=${it.rule[1]};COUNT=${it.n}`;
+    if (it.rule === 'M1') return `FREQ=MONTHLY;COUNT=${it.n}`;
+    return `FREQ=WEEKLY;BYDAY=${['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].filter((_, i) => it.rule[1 + i] === '1').join(',')};COUNT=${it.n}`;
+  }
+  const ruleText = it => it.rule === 'X' ? '' : it.rule === 'M1' ? '매월 ' : it.rule[0] === 'W' ? '' : it.rule === 'D1' ? '' : it.rule === 'D7' ? '매주 ' : `${it.rule[1]}일마다 `;
+  const titleOf = it => it.code === 'np' || it.code === 'z' ? it.name : `약 복용 (${it.name})`;
+
   function build() {
-    const items = ALL.filter(x => sel.has(x.k));
-    const days = DAYS;
     const a1 = $('add'), ak = $('kakao');
-    if (!items.length || !days) {
-      $('times').innerHTML = '<div class="empty">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</div>';
-      $('sum').style.display = 'none'; document.querySelector('.took').style.display = 'none';
-      ak.classList.add('off'); $('khelp').style.display = 'none'; $('cal').style.display = 'none'; $('help').style.display = 'none';
-      return;
-    }
-    const P = plan(items, days, $('took').checked);
-    $('took-note').textContent = P.tookLabel ? `${P.tookLabel} 알림을 제외하고 등록합니다.` : '';
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-    const ymd = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-    const md = d => `${d.getMonth() + 1}/${d.getDate()}(${DAYNAME[d.getDay()]})`;
-    const fmtT = t => { const h = +t.slice(0, 2); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${t.slice(3)}`; };
-    const ev = P.per.map(p => {
-      const t = sel.get(p.x.k).replace(':', ''), s8 = ymd(p.first);
-      const end = `${t.slice(0, 2)}${pad(Math.min(59, +t.slice(2) + 10))}`;
-      const title = `약 복용 (${p.x.name})`;
-      return ['BEGIN:VEVENT', `UID:${s8}-${p.x.k}-${t}-${Math.random().toString(36).slice(2)}@med-alarm`, `DTSTAMP:${stamp}`,
-        `SUMMARY:${title}`, `DTSTART:${s8}T${t}00`, `DTEND:${s8}T${end}00`,
-        `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`,
-        'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n');
-    });
-    if (!ev.length) {
-      $('sum').style.display = ''; $('sum').textContent = '남은 복용 알림이 없습니다.';
+    const hide = msg => {
+      $('sum').style.display = msg ? '' : 'none'; $('sum').textContent = msg || '';
       ak.classList.add('off'); $('cal').style.display = 'none'; $('help').style.display = 'none';
-      return;
+    };
+    if (!ok) {
+      $('times').innerHTML = '<div class="empty">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</div>';
+      document.querySelector('.took').style.display = 'none'; $('khelp').style.display = 'none';
+      return hide('');
     }
-    // 카카오톡: 복용 시간마다 코드.첫알림(YYYYMMDDHHmm).D간격.횟수 → Worker가 카카오 동의 후 등록
-    const kp = P.per.map(p => `${p.x.k}.${ymd(p.first)}${pad(p.first.getHours())}${pad(p.first.getMinutes())}.D${p.iv}.${p.n}`).join('~');
+    document.querySelector('.took').style.display = kind === 'x' ? 'none' : '';
+    const R = plan($('took').checked);
+    $('took-note').textContent = R.tookLabel ? `${R.tookLabel} 알림을 제외하고 등록합니다.` : '';
+    if (R.err) return hide(R.err);
+    if (!R.items.length) return hide('남은 복용 알림이 없습니다.');
+    $('cal').style.display = ''; $('help').style.display = '';
+
+    $('sum').style.display = '';
+    $('sum').innerHTML = R.items.map(it => it.rule === 'X'
+        ? `${it.name} · ${md(it.first)} ${fmtT(hm(it.first))}`
+        : `${it.name} ${fmtT(it.t)} · ${md(it.first)}부터 ${ruleText(it)}${it.n}회`).join('<br>')
+      + (R.last && kind !== 'x' ? `<br><span style="font-weight:400">마지막 복용: ${md(R.last)} ${R.lastName}</span>` : '');
+
+    // 카카오톡: 항목마다 코드.첫알림(YYYYMMDDHHmm).규칙.횟수 → Worker가 카카오 동의 후 등록
+    const kp = R.items.map(it => `${it.code}.${ymd(it.first)}${pad(it.first.getHours())}${pad(it.first.getMinutes())}.${it.rule}.${it.n}`).join('~');
     ak.href = KAKAO_WORKER + '?' + new URLSearchParams({ p: kp, m: KAKAO_MODE }).toString();
     ak.classList.remove('off');
-    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//med-alarm//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
-      ...ev, 'END:VCALENDAR'].join('\r\n');
-    const s8 = ymd(P.per[0].first);
-    $('sum').style.display = '';
-    $('sum').innerHTML = P.per.map(p => `${p.x.name} ${fmtT(sel.get(p.x.k))} · ${md(p.first)}부터 ${p.iv > 1 ? p.iv + '일마다 ' : ''}${p.n}회`).join('<br>')
-      + (P.last ? `<br><span style="font-weight:400">마지막 알림: ${md(P.last)} ${P.lastName}</span>` : '');
+
     // 아이폰: ics 데이터 주소 → '캘린더에 추가' 화면에서 반복 포함 바로 등록 (다운로드 없음)
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+    const dt = d => `${ymd(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+    const ev = R.items.map(it => {
+      const en = new Date(it.first.getTime() + 10 * 60000), rr = rruleOf(it), title = titleOf(it);
+      return ['BEGIN:VEVENT', `UID:${dt(it.first)}-${it.code}-${Math.random().toString(36).slice(2)}@med-alarm`, `DTSTAMP:${stamp}`,
+        `SUMMARY:${title}`, `DTSTART:${dt(it.first)}`, `DTEND:${dt(en)}`, ...(rr ? [`RRULE:${rr}`] : []),
+        'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n');
+    });
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//med-alarm//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...ev, 'END:VCALENDAR'].join('\r\n');
     a1.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
     a1.classList.remove('off');
-    // 구글: 복용 시간마다 '일정 추가' 화면 (반복 포함). 안드로이드는 QR/ics로 반복이 안 넘어가서 이 방식만 (2026-11-19 시험)
-    const gfmt = d => `${ymd(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
-    $('gbtns').innerHTML = P.per.map(p => {
-      const st = new Date(p.first), en = new Date(st.getTime() + 10 * 60000);
-      const url = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({
-        action: 'TEMPLATE', text: `약 복용 (${p.x.name})`, dates: `${gfmt(st)}/${gfmt(en)}`, ctz: 'Asia/Seoul',
-        recur: `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`, details: '복약 알림' }).toString();
-      return `<a class="btn sec" target="_blank" rel="noopener" href="${url}">${P.per.length > 1 ? '구글 · ' + p.x.name : '구글 캘린더'}</a>`;
+
+    // 구글: 항목마다 '일정 추가' 화면 (반복 포함). 안드로이드는 QR/ics로 반복이 안 넘어가서 이 방식만 (2026-11-19 시험)
+    const many = R.items.length > 1;
+    $('gbtns').innerHTML = R.items.map(it => {
+      const en = new Date(it.first.getTime() + 10 * 60000), rr = rruleOf(it);
+      const prm = { action: 'TEMPLATE', text: titleOf(it), dates: `${dt(it.first)}/${dt(en)}`, ctz: 'Asia/Seoul', details: '복약 알림' };
+      if (rr) prm.recur = 'RRULE:' + rr;
+      const short = it.code === 'np' ? '새 팩' : it.code === 'z' ? '소진' : it.name.replace(/^(매주 |8시간마다 |12시간마다 |주기 복용 )/, '').replace(/[()]/g, '');
+      return `<a class="btn sec" target="_blank" rel="noopener" href="https://calendar.google.com/calendar/render?${new URLSearchParams(prm)}">${many ? '구글 · ' + short : '구글 캘린더'}</a>`;
     }).join('');
     document.querySelectorAll('#gbtns a').forEach(a => a.onclick = () => { a.classList.add('done'); if (!a.textContent.startsWith('✓')) a.textContent = '✓ ' + a.textContent; });
-    $('help').innerHTML = P.per.length > 1
-      ? '휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요. 구글 캘린더는 복용 시간마다 한 번씩 <b>저장</b>합니다.'
+    $('help').innerHTML = many
+      ? '휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요. 구글 캘린더는 항목마다 한 번씩 <b>저장</b>합니다.'
       : '휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요.';
     window.__ics = ics;   // 시험용
   }
   $('took').onchange = build;
-  render();
+  if (ok) rows();
+  build();
 })();
 </script>
 </body>
