@@ -44,6 +44,10 @@
   .dt { display:flex; flex-direction:column; gap:6px; align-items:stretch; }
   .trow input[type=time], .trow input[type=date] { max-width:170px; }
   .empty { color:var(--dim); padding:12px 0; }
+  .intro p { margin:10px 0; line-height:1.65; }
+  .intro ol { padding-left:20px; margin:8px 0 4px; line-height:1.7; }
+  .intro .ex { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 10px; }
+  .intro .ex a { padding:8px 12px; border:1.5px solid var(--line); border-radius:999px; color:var(--fg); text-decoration:none; font-size:14.5px; background:var(--bg); }
   .sum { background:var(--soft); border-radius:12px; padding:12px 14px; margin-top:16px; font-weight:700; }
   a.btn { display:block; text-align:center; background:var(--ink); color:var(--card); text-decoration:none; font-weight:800;
           font-size:18px; padding:16px; border-radius:14px; margin:14px 0 8px; }
@@ -70,7 +74,7 @@
 </div></header>
 <main>
 
-  <h2>알림 시각</h2>
+  <h2 id="times-h">알림 시각</h2>
   <div class="card" id="times"></div>
 
   <label class="took"><input type="checkbox" id="took"><span><b>방금 약을 먹었어요</b><small id="took-note"></small></span></label>
@@ -279,6 +283,19 @@
       $('sum').style.display = msg ? '' : 'none'; $('sum').textContent = msg || '';
       ak.classList.add('off'); $('cal').style.display = 'none'; $('help').style.display = 'none';
     };
+    if (!q.get('p')) {        // QR 없이 들어온 경우: 서비스 소개 + 예시
+      $('times-h').textContent = '이용 방법';
+      $('times').innerHTML = `<div class="intro">
+        <p>약국에서 받은 약 봉투의 <b>QR을 휴대폰 카메라로 찍으면</b> 약사가 정해 준 복용 시간이 이 화면에 표시됩니다.</p>
+        <ol><li>알림 시각을 생활에 맞게 바꿉니다.</li>
+            <li><b>카카오톡으로 알림 받기</b>를 누르면 카카오톡 캘린더에 복약 '할 일'이 반복 등록됩니다.</li>
+            <li>복용 시각마다 카카오톡으로 알림이 오고, <b>완료하기</b>로 복용을 체크할 수 있습니다.</li></ol>
+        <p style="color:var(--dim);font-size:14.5px;margin-bottom:4px">예시 화면 보기</p>
+        <div class="ex"><a href="#p=m,e&d=7">아침·저녁 7일</a><a href="#p=d3&d=30">3일에 1번 30일</a><a href="#p=c&d=1&c=21-7">21일 복용·7일 휴약</a></div></div>`;
+      document.querySelector('.took').style.display = 'none'; $('khelp').style.display = 'none';
+      ak.style.display = 'none';
+      return hide('');
+    }
     if (!ok) {
       $('times').innerHTML = '<div class="empty">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</div>';
       document.querySelector('.took').style.display = 'none'; $('khelp').style.display = 'none';
@@ -332,6 +349,7 @@
       : '휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요.';
     window.__ics = ics;   // 시험용
   }
+  window.addEventListener('hashchange', () => location.reload());   // 예시 링크 등 주소 값이 바뀌면 다시 읽기
   $('took').onchange = build;
   $('zchk').onchange = build;
   if (ok) rows();
