@@ -26,12 +26,12 @@
           background:var(--card); color:var(--fg); border:1.5px solid var(--line); -webkit-tap-highlight-color:transparent; }
   .chip.on { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
   #kakao { background:var(--brand); color:#191919; }
-  #iosbox { margin-top:16px; }
-  #iosbox a.alt { font-size:14px; padding:9px; border-width:1.5px; }
+  /* 휴대폰 캘린더: [아이폰 캘린더] [구글 캘린더] 나란히 */
+  .cal { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; align-items:start; }
+  .cal a.btn { margin:0; font-size:15.5px; padding:13px 4px; white-space:nowrap; }
+  #gbtns { display:grid; gap:8px; }
   a.btn.sec { background:transparent; color:var(--fg); border:2px solid var(--fg); font-size:17px; padding:14px; margin-top:4px; }
   #kakao.done { background:var(--card); color:var(--fg); border:2px solid var(--brand); }
-  details.more { margin-top:18px; border-top:1px solid var(--line); padding-top:10px; }
-  details.more summary { color:var(--dim); font-size:14.5px; cursor:pointer; padding:6px 0; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 14px; }
   .trow { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
   .trow:last-child { border-bottom:0; }
@@ -46,7 +46,6 @@
           font-size:18px; padding:16px; border-radius:14px; margin:14px 0 8px; }
   a.btn.off { opacity:.35; pointer-events:none; }
   a.btn.done { background:var(--card); color:var(--fg); border:2px solid var(--ink); }
-  #gbtns a.btn { margin:10px 0; }
   /* 예비 버튼: 갈색 테두리 상자 (크기는 기본 버튼보다 약간 작게) */
   :root { --alt:#6b4a2b; }
   @media (prefers-color-scheme: dark) { :root { --alt:#d9b98c; } }
@@ -76,15 +75,11 @@
   <div class="sum" id="sum"></div>
   <a class="btn off" id="kakao" href="#">카카오톡으로 알림 받기</a>
   <p class="help" id="khelp">처음 한 번은 카카오 동의 화면이 나와요. <b>동의하고 계속하기</b>를 누르면 등록됩니다.</p>
-  <div id="iosbox"></div>
-
-  <details class="more" id="more">
-    <summary>카카오톡 말고 휴대폰 캘린더에 등록하기</summary>
-    <a class="btn off" id="add" href="#">캘린더에 알림 추가</a>
-    <a class="alt" id="add2" href="#">버튼이 안 되면 여기</a>
+  <div class="cal" id="cal">
+    <a class="btn sec off" id="add" href="#">아이폰 캘린더</a>
     <div id="gbtns"></div>
-    <p class="help" id="help"></p>
-  </details>
+  </div>
+  <p class="help" id="help">휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요.</p>
 
   <footer>
     이 페이지는 이름·연락처 등 개인정보를 수집하거나 저장하지 않습니다.
@@ -181,16 +176,14 @@
     return { per, last: lastO ? lastO.when : null, lastName: lastO ? lastO.x.name : '', tookLabel };
   }
 
-  let blobUrl = null;
   function build() {
     const items = ALL.filter(x => sel.has(x.k));
     const days = DAYS;
-    const a1 = $('add'), a2 = $('add2'), ak = $('kakao');
+    const a1 = $('add'), ak = $('kakao');
     if (!items.length || !days) {
       $('times').innerHTML = '<div class="empty">QR 정보가 올바르지 않습니다. 약국에 문의해 주세요.</div>';
       $('sum').style.display = 'none'; document.querySelector('.took').style.display = 'none';
-      a1.classList.add('off'); a2.style.display = 'none'; $('help').textContent = '';
-      ak.classList.add('off'); $('khelp').style.display = 'none'; $('more').style.display = 'none';
+      ak.classList.add('off'); $('khelp').style.display = 'none'; $('cal').style.display = 'none'; $('help').style.display = 'none';
       return;
     }
     const P = plan(items, days, $('took').checked);
@@ -210,8 +203,7 @@
     });
     if (!ev.length) {
       $('sum').style.display = ''; $('sum').textContent = '남은 복용 알림이 없습니다.';
-      a1.classList.add('off'); a2.style.display = 'none'; $('help').textContent = '';
-      ak.classList.add('off');
+      ak.classList.add('off'); $('cal').style.display = 'none'; $('help').style.display = 'none';
       return;
     }
     // 카카오톡: 복용 시간마다 코드.첫알림(YYYYMMDDHHmm).D간격.횟수 → Worker가 카카오 동의 후 등록
@@ -224,39 +216,22 @@
     $('sum').style.display = '';
     $('sum').innerHTML = P.per.map(p => `${p.x.name} ${fmtT(sel.get(p.x.k))} · ${md(p.first)}부터 ${p.iv > 1 ? p.iv + '일마다 ' : ''}${p.n}회`).join('<br>')
       + (P.last ? `<br><span style="font-weight:400">마지막 알림: ${md(P.last)} ${P.lastName}</span>` : '');
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    blobUrl = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
-    const dataUrl = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
-    // 파일 이름에 시각을 붙여 '같은 이름 파일이 있습니다' 창이 뜨지 않게
-    const nowT = new Date(), fname = `복약알림_${s8}_${pad(nowT.getHours())}${pad(nowT.getMinutes())}${pad(nowT.getSeconds())}.ics`;
-    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // 아이폰: ics 데이터 주소 → '캘린더에 추가' 화면에서 반복 포함 바로 등록 (다운로드 없음)
+    a1.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
     a1.classList.remove('off');
-    if (ios) {
-      // 아이폰: 기본 캘린더 추가를 접지 않고 카카오 버튼 바로 아래에 보조 버튼으로
-      const box = $('iosbox');
-      if (!box.children.length) { box.append(a1, a2, $('help')); $('more').style.display = 'none'; }
-      a1.textContent = '아이폰 캘린더에 추가'; a1.classList.add('sec');
-      a1.href = dataUrl; a1.removeAttribute('download');
-      a2.href = blobUrl; a2.download = fname; a2.style.display = '';
-      $('help').innerHTML = '‘캘린더에 추가’ 화면이 뜨면 <b>모두 추가</b>를 누르세요.';
-      $('gbtns').innerHTML = '';
-    } else {
-      // 안드로이드: 다운로드 없이 구글 캘린더 일정 추가 화면으로 (반복 포함). 복용 시간마다 버튼 하나
-      // (삼성 카메라·크롬은 반복을 넘기지 않거나 캘린더 앱 호출을 막음 — 2026-11-19 시험)
-      a1.style.display = 'none'; a2.style.display = 'none';
-      const gfmt = d => `${ymd(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
-      $('gbtns').innerHTML = P.per.map(p => {
-        const st = new Date(p.first), en = new Date(st.getTime() + 10 * 60000);
-        const url = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({
-          action: 'TEMPLATE', text: `약 복용 (${p.x.name})`, dates: `${gfmt(st)}/${gfmt(en)}`, ctz: 'Asia/Seoul',
-          recur: `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`, details: '복약 알림' }).toString();
-        return `<a class="btn" target="_blank" rel="noopener" href="${url}">${P.per.length > 1 ? p.x.name + ' 알림 ' : ''}구글 캘린더에 추가</a>`;
-      }).join('');
-      document.querySelectorAll('#gbtns a').forEach(a => a.onclick = () => { a.classList.add('done'); a.textContent = '✓ ' + a.textContent; });
-      $('help').innerHTML = P.per.length > 1
-        ? '버튼마다 구글 캘린더가 열리면 <b>저장</b>을 누르고, 이 화면으로 돌아와 다음 버튼을 누르세요.'
-        : '구글 캘린더가 열리면 <b>저장</b>을 누르세요.';
-    }
+    // 구글: 복용 시간마다 '일정 추가' 화면 (반복 포함). 안드로이드는 QR/ics로 반복이 안 넘어가서 이 방식만 (2026-11-19 시험)
+    const gfmt = d => `${ymd(d)}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+    $('gbtns').innerHTML = P.per.map(p => {
+      const st = new Date(p.first), en = new Date(st.getTime() + 10 * 60000);
+      const url = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({
+        action: 'TEMPLATE', text: `약 복용 (${p.x.name})`, dates: `${gfmt(st)}/${gfmt(en)}`, ctz: 'Asia/Seoul',
+        recur: `RRULE:FREQ=DAILY;INTERVAL=${p.iv};COUNT=${p.n}`, details: '복약 알림' }).toString();
+      return `<a class="btn sec" target="_blank" rel="noopener" href="${url}">${P.per.length > 1 ? '구글 · ' + p.x.name : '구글 캘린더'}</a>`;
+    }).join('');
+    document.querySelectorAll('#gbtns a').forEach(a => a.onclick = () => { a.classList.add('done'); if (!a.textContent.startsWith('✓')) a.textContent = '✓ ' + a.textContent; });
+    $('help').innerHTML = P.per.length > 1
+      ? '휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요. 구글 캘린더는 복용 시간마다 한 번씩 <b>저장</b>합니다.'
+      : '휴대폰 캘린더에 직접 넣으려면 기종에 맞는 버튼을 누르세요.';
     window.__ics = ics;   // 시험용
   }
   $('took').onchange = build;
