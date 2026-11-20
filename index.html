@@ -26,6 +26,9 @@
           background:var(--card); color:var(--fg); border:1.5px solid var(--line); -webkit-tap-highlight-color:transparent; }
   .chip.on { background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
   #kakao { background:var(--brand); color:#191919; }
+  #iosbox { margin-top:16px; }
+  #iosbox a.alt { font-size:14px; padding:9px; border-width:1.5px; }
+  a.btn.sec { background:transparent; color:var(--fg); border:2px solid var(--fg); font-size:17px; padding:14px; margin-top:4px; }
   #kakao.done { background:var(--card); color:var(--fg); border:2px solid var(--brand); }
   details.more { margin-top:18px; border-top:1px solid var(--line); padding-top:10px; }
   details.more summary { color:var(--dim); font-size:14.5px; cursor:pointer; padding:6px 0; }
@@ -73,6 +76,7 @@
   <div class="sum" id="sum"></div>
   <a class="btn off" id="kakao" href="#">카카오톡으로 알림 받기</a>
   <p class="help" id="khelp">처음 한 번은 카카오 동의 화면이 나와요. <b>동의하고 계속하기</b>를 누르면 등록됩니다.</p>
+  <div id="iosbox"></div>
 
   <details class="more" id="more">
     <summary>카카오톡 말고 휴대폰 캘린더에 등록하기</summary>
@@ -86,6 +90,7 @@
     이 페이지는 이름·연락처 등 개인정보를 수집하거나 저장하지 않습니다.
     알림은 카카오 로그인 동의를 거쳐 내 카카오톡 캘린더에 만들어지며,
     로그인 정보는 등록 직후 폐기하고 보관하지 않습니다.
+    휴대폰 캘린더 등록은 이 휴대폰 안에서만 처리됩니다.
   </footer>
 </main>
 <script>
@@ -227,6 +232,10 @@
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     a1.classList.remove('off');
     if (ios) {
+      // 아이폰: 기본 캘린더 추가를 접지 않고 카카오 버튼 바로 아래에 보조 버튼으로
+      const box = $('iosbox');
+      if (!box.children.length) { box.append(a1, a2, $('help')); $('more').style.display = 'none'; }
+      a1.textContent = '아이폰 캘린더에 추가'; a1.classList.add('sec');
       a1.href = dataUrl; a1.removeAttribute('download');
       a2.href = blobUrl; a2.download = fname; a2.style.display = '';
       $('help').innerHTML = '‘캘린더에 추가’ 화면이 뜨면 <b>모두 추가</b>를 누르세요.';
