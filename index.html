@@ -74,6 +74,7 @@
   <div class="card" id="times"></div>
 
   <label class="took"><input type="checkbox" id="took"><span><b>방금 약을 먹었어요</b><small id="took-note"></small></span></label>
+  <label class="took" id="zrow" style="display:none"><input type="checkbox" id="zchk"><span><b>약이 떨어지기 전에 알려주세요</b><small id="z-note"></small></span></label>
 
   <div class="sum" id="sum"></div>
   <a class="btn off" id="kakao" href="#">카카오톡으로 알림 받기</a>
@@ -99,7 +100,7 @@
 //           wd 요일 지정 + w=월화수목금토일 1/0                          d = 일수
 //           c  주기 복용 + c=복용일-휴약일 (21-7 등)                     d = 팩 수(1~3)
 //           x  1회 알림 + x=알림 수(1~2)  — 날짜·시각은 손님이 지정
-//   z=1  약 소진 알림 (마지막 복용 2일 전 오전 10시)
+//   약 소진 알림: 손님이 체크 (복용 기간이 첫 알림~마지막 알림 7일 이상일 때만 표시). 마지막 복용일 2일 전 오전 10시
 // 복용 방법과 일수는 약국이 정한 그대로. 손님은 시각(과 주기 시작일·1회 알림 날짜)만 바꾼다. 개인정보는 받지 않는다.
 (function () {
   // 카카오톡 등록 서버 (Cloudflare Worker). m: t = 할 일(완료 체크 가능), e = 일정, b = 둘 다
@@ -122,7 +123,7 @@
   const fmtT = t => { const h = +t.slice(0, 2); return `${h < 12 ? '오전' : '오후'} ${h % 12 || 12}:${t.slice(3)}`; };
   const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const wk = d => (d.getDay() + 6) % 7;                      // 월=0 … 일=6
-  const today0 = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const today0 = (d) => { const n = d || new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
 
   // ---- QR 값 읽기 (# 뒤: 서버로 전송되지 않음. 예전 라벨의 ? 방식도 읽음) ----
   const q = new URLSearchParams(location.hash.length > 1 ? location.hash.slice(1) : location.search);
@@ -134,7 +135,6 @@
   const W = /^[01]{7}$/.test(q.get('w') || '') ? q.get('w') : '';
   const C = (/^(\d{1,2})-(\d{1,2})$/.exec(q.get('c') || '') || []).slice(1).map(Number);
   const XN = Math.min(2, Math.max(1, parseInt(q.get('x') || '1', 10) || 1));
-  const Z = q.get('z') === '1' && !['c', 'x'].includes(kind);
   const ok = kind === 'x' ? true
     : kind === 'c' ? (C.length === 2 && C[0] >= 1 && C[0] <= 60 && C[1] >= 1 && C[1] <= 30 && D >= 1 && D <= 3)
     : kind === 'mo' ? (D >= 1 && D <= 24)
@@ -185,7 +185,7 @@
   // ---- 알림 계획: 항목 = {code, name, first, rule(D1~D7 | W1010100 | M1 | X), n, t} ----
   //  - 등록하는 지금 이후 가장 가까운 복용 시간부터 (지난 시간은 건너뜀)
   //  - '방금 약을 먹었어요': 지금과 가장 가까운 오늘 복용분(하루 1회 이하 방식은 '오늘')을 먹은 것으로 보고 1회 빼고 그 다음부터
-  function plan(took) {
+  function plan(took, wantZ) {
     const now = new Date(), today = today0(), items = [];
     let tookLabel = '', err = '';
     if (kind === 'daily' || kind === 'h8' || kind === 'h12') {
@@ -251,11 +251,16 @@
       : (() => { let c = 0, d = new Date(it.first); for (;;) { if (W[wk(d)] === '1' && ++c === it.n) return d; d = at(d, 1, it.t); } })();
     let last = null, lastName = '';
     for (const it of items) if (it.code !== 'np') { const l = lastOf(it); if (!last || l > last) { last = l; lastName = it.name; } }
-    if (Z && last) {
+    // 약 소진 알림: 첫 알림~마지막 복용이 7일 이상일 때만 (예: 3일에 1번은 3회 이상). 마지막 복용일 2일 전(날짜 기준) 오전 10시
+    let zAt = null;
+    const firstAll = items.length ? items.reduce((a, it) => it.first < a ? it.first : a, items[0].first) : null;
+    if (!['c', 'x'].includes(kind) && last && firstAll) {
+      const span = Math.round((today0.call(null, last) - today0.call(null, firstAll)) / 864e5) + 1;
       const zw = at(last, -2, '10:00');
-      if (zw > now) items.push({ code: 'z', name: NAME.z, first: zw, rule: 'X', n: 1, t: '10:00' });
+      if (span >= 7 && zw > now) zAt = zw;
     }
-    return { items, last, lastName, tookLabel, err };
+    if (wantZ && zAt) items.push({ code: 'z', name: NAME.z, first: zAt, rule: 'X', n: 1, t: '10:00' });
+    return { items, last, lastName, tookLabel, err, zAt };
   }
 
   function rruleOf(it) {
@@ -279,8 +284,10 @@
       return hide('');
     }
     document.querySelector('.took').style.display = kind === 'x' ? 'none' : '';
-    const R = plan($('took').checked);
+    const R = plan($('took').checked, $('zchk').checked);
     $('took-note').textContent = R.tookLabel ? `${R.tookLabel} 알림을 제외하고 등록합니다.` : '';
+    $('zrow').style.display = R.zAt ? '' : 'none';
+    if (R.zAt) $('z-note').textContent = `마지막 복용 2일 전, ${md(R.zAt)} ${fmtT(hm(R.zAt))}에 알려드려요.`;
     if (R.err) return hide(R.err);
     if (!R.items.length) return hide('남은 복용 알림이 없습니다.');
     $('cal').style.display = ''; $('help').style.display = '';
@@ -325,6 +332,7 @@
     window.__ics = ics;   // 시험용
   }
   $('took').onchange = build;
+  $('zchk').onchange = build;
   if (ok) rows();
   build();
 })();
